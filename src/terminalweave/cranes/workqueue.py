@@ -56,5 +56,54 @@ class CraneWorkQueue:
     def release(self, move_id: str) -> None:
         self.claimed.discard(move_id)
 
+    def replan_after_stop(
+        self,
+        tasks: list,
+        restart_at,
+        active_lifts: list,
+        cranes: list,
+        safety_checkers: dict,
+        rail_authority,
+        rail_profiles: dict,
+        increment=None,
+        max_exact_tasks=None,
+    ):
+        """Replan unstarted moves while treating every claimed move as fixed."""
+        from datetime import timedelta
+        from terminalweave.cranes.recovery import CraneRecoveryPlanner
+        planner = CraneRecoveryPlanner(
+            cranes,
+            safety_checkers,
+            rail_authority,
+            rail_profiles,
+            increment or timedelta(minutes=5),
+            max_exact_tasks if max_exact_tasks is not None else 12,
+        )
+        return planner.replan(self, tasks, restart_at, active_lifts)
+
+    def replan(
+        self,
+        tasks: list,
+        restart_at,
+        active_lifts: list,
+        cranes: list,
+        safety_checkers: dict,
+        rail_authority,
+        rail_profiles: dict,
+        increment=None,
+        max_exact_tasks=None,
+    ):
+        return self.replan_after_stop(
+            tasks,
+            restart_at,
+            active_lifts,
+            cranes,
+            safety_checkers,
+            rail_authority,
+            rail_profiles,
+            increment,
+            max_exact_tasks,
+        )
+
     def progress(self) -> float:
         return len(self.completed) / len(self.moves) if self.moves else 1.0
