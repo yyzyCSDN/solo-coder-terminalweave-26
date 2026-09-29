@@ -28,3 +28,7 @@ library components intended to be composed by an embedding application.
 ## Main packages
 
 `marine`, `cranes`, `yard`, `gate`, `customs`, `reefer`, `hazmat`, `equipment`, `rail`, `billing`, `transshipment`, `planning`, `persistence`, `reporting`, and `api`.
+
+## Quay-crane recovery planning
+
+`terminalweave.cranes.recovery` replans unstarted quay-crane moves after an unplanned stop. In-progress lifts are treated as fixed reservations; successor moves cannot start before them, and the result reports both assignments and structured reasons for moves that remain unscheduled.

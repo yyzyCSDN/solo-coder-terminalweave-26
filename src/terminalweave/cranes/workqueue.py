@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from terminalweave.core.errors import ValidationError
+from terminalweave.core.errors import NotFoundError, ValidationError
 
 @dataclass(frozen=True)
 class WorkMove:
@@ -28,12 +28,48 @@ class CraneWorkQueue:
         self.moves = {m.move_id: m for m in moves}
         self.completed: set[str] = set()
         self.claimed: set[str] = set()
+        self.replan_order: tuple[str, ...] = ()
+
+    @property
+    def pending_ids(self) -> set[str]:
+        return set(self.moves) - self.completed - self.claimed
+
+    @property
+    def active_ids(self) -> set[str]:
+        return set(self.claimed)
+
+    def apply_replan(self, ordered_pending_ids: tuple[str, ...] | list[str]) -> None:
+        ordered = tuple(ordered_pending_ids)
+        if len(ordered) != len(set(ordered)):
+            raise ValidationError('duplicate move in replan order')
+        unknown = set(ordered) - self.moves.keys()
+        if unknown:
+            raise ValidationError(f'unknown moves: {sorted(unknown)}')
+        pending = self.pending_ids
+        if set(ordered) != pending:
+            raise ValidationError('replan order must contain every pending move exactly once')
+        self.replan_order = ordered
+
+    def _ordered_pending(self, moves: list[WorkMove]) -> list[WorkMove]:
+        if not self.replan_order:
+            return moves
+        rank = {move_id: index for index, move_id in enumerate(self.replan_order)}
+        return sorted(moves, key=lambda move: rank.get(move.move_id, len(rank)))
+
+    def status(self, move_id: str) -> str:
+        if move_id not in self.moves:
+            raise NotFoundError('unknown move')
+        if move_id in self.completed:
+            return 'completed'
+        if move_id in self.claimed:
+            return 'in_progress'
+        return 'pending'
 
     def ready(self) -> list[WorkMove]:
         return [m for m in self.moves.values() if m.move_id not in self.completed | self.claimed and m.predecessor_ids <= self.completed]
 
     def next(self, current_bay: int) -> WorkMove | None:
-        ready = self.ready()
+        ready = self._ordered_pending(self.ready())
         if not ready:
             return None
         return min(ready, key=lambda m: (-m.priority, abs(m.bay - current_bay), -m.tier, m.move_id))

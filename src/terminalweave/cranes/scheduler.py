@@ -41,6 +41,35 @@ class ScheduledCraneJob:
     interval: TimeInterval
     moves: int
 
+def crane_jobs_interfere(
+    candidate: ScheduledCraneJob,
+    existing: ScheduledCraneJob,
+    cranes: dict[str, Crane],
+) -> bool:
+    if not candidate.interval.overlaps(existing.interval):
+        return False
+    c = cranes[candidate.crane_id]
+    e = cranes[existing.crane_id]
+    if abs(candidate.bay - existing.bay) < max(c.min_separation_bays, e.min_separation_bays):
+        return True
+    if candidate.rail_index < existing.rail_index and candidate.bay > existing.bay:
+        return True
+    if candidate.rail_index > existing.rail_index and candidate.bay < existing.bay:
+        return True
+    return False
+
+
+def scheduled_jobs_conflict(
+    candidate: ScheduledCraneJob,
+    existing: ScheduledCraneJob,
+    cranes: dict[str, Crane],
+) -> bool:
+    return (
+        candidate.crane_id == existing.crane_id
+        and candidate.interval.overlaps(existing.interval)
+    ) or crane_jobs_interfere(candidate, existing, cranes)
+
+
 class CraneScheduler:
 
     def __init__(self, cranes: list[Crane]):
@@ -58,22 +87,6 @@ class CraneScheduler:
     def _duration(self, crane: Crane, job: CraneJob) -> timedelta:
         return timedelta(hours=job.moves / crane.moves_per_hour)
 
-    def _same_crane_conflict(self, candidate: ScheduledCraneJob, existing: ScheduledCraneJob) -> bool:
-        return candidate.crane_id == existing.crane_id and candidate.interval.overlaps(existing.interval)
-
-    def _interference(self, candidate: ScheduledCraneJob, existing: ScheduledCraneJob) -> bool:
-        if not candidate.interval.overlaps(existing.interval):
-            return False
-        c = self.cranes[candidate.crane_id]
-        e = self.cranes[existing.crane_id]
-        if abs(candidate.bay - existing.bay) < max(c.min_separation_bays, e.min_separation_bays):
-            return True
-        if candidate.rail_index < existing.rail_index and candidate.bay > existing.bay:
-            return True
-        if candidate.rail_index > existing.rail_index and candidate.bay < existing.bay:
-            return True
-        return False
-
     def can_schedule(self, crane: Crane, job: CraneJob, start: datetime) -> bool:
         start = ensure_utc(start)
         finish = start + self._duration(crane, job)
@@ -81,7 +94,7 @@ class CraneScheduler:
             return False
         candidate = ScheduledCraneJob(crane.crane_id, crane.rail_index, job.job_id, job.bay, TimeInterval(start, finish), job.moves)
         for existing in self._scheduled:
-            if self._same_crane_conflict(candidate, existing) or self._interference(candidate, existing):
+            if scheduled_jobs_conflict(candidate, existing, self.cranes):
                 return False
         return True
 
